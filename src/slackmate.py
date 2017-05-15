@@ -1,16 +1,19 @@
 import os
 import time
 import random
+
+from responses import lunch_responses, lunch_keywords
 from slackclient import SlackClient
 
 # constants
 BOT_ID = os.environ.get('bot_id')
 TOKEN = os.environ.get('token')
-AT_BOT = "<@" + BOT_ID + ">"
+AT_BOT = "<@{}>".format(BOT_ID)
 EXAMPLE_COMMAND = "do"
 BOT_NAME = 'slackmate'
-COMMANDS = ['do', 'what']
-KEYWORDS = ['lunch']
+COMMANDS = ['do', 'what', 'calculate']
+KEYWORDS = lunch_keywords
+KEYWORD_TRIGGER_PERCENT = 100
 
 slack_client = SlackClient(TOKEN)
 
@@ -26,25 +29,25 @@ def handle_command(command, channel):
         response = "Sure...write some more code then I can do that!"
     elif command.startswith('what'):
         response = "Sure...write some more code then I can do that!"
+    elif command.startswith('calculate'):
+        response = "Sure...write some more code then I can do that!"
 
     slack_client.api_call("chat.postMessage", channel=channel,
                           text=response, as_user=True)
 
-def handle_keyword(command, channel):
+def handle_keyword(message, channel):
     """
-        interperets keywords
+        looks for keywords and chats back
     """
+    message = message.lower()
     response = None
-    for lunch_key in ['lunch', 'ht?', 'harris teeter', ' ht', 'chipotle']:
-        if lunch_key in command.lower():
-            lunch_responses = ['Lunch! Did somebody say lunch?!',
-                               'Sure let me just commit these changes',
-                               "No thank. I'm pretty full on all this success we are having",
-                               'https://media.tenor.co/images/8a01457a623ccd7582c6331b04194bf3/tenor.gif',
-                               'http://stream1.gifsoup.com/view3/1860304/office-lunch-tray-o.gif',
-                               'https: // media.giphy.com / media / v2StD0rQVBJni / giphy.gif',
-                               'https://m.popkey.co/3b4c61/ldGm6_s-200x150.gif']
-            response = random.SystemRandom().choice(lunch_responses)
+    for lunch_key in lunch_keywords:
+        if lunch_key in message:
+            trigger_roll = random.randint(0, 99)
+            if trigger_roll < KEYWORD_TRIGGER_PERCENT:
+                response = random.SystemRandom().choice(lunch_responses)
+            else:
+                print('The almighty Rand Don has blocked this message')
 
     if response:
         slack_client.api_call("chat.postMessage", channel=channel, text=response, as_user=True)
@@ -56,24 +59,34 @@ def parse_slack_output(slack_rtm_output):
         directed at the Bot, based on its ID.
     """
     output_list = slack_rtm_output
+    #print(output_list)
     if output_list and len(output_list) > 0:
         for output in output_list:
-            if output and 'text' in output:
+            if output and 'text' in output and 'bot_id' not in output:
                 if AT_BOT in output['text']:
                     # return text after the @ mention, whitespace removed
-                    return 'command', output['text'].split(AT_BOT)[1].strip().lower(), output['channel']
+                    return 'command', output['text'].split(AT_BOT)[1].strip().lower(), output['channel'], output['user']
                 else:
                     for keyword in KEYWORDS:
                         if keyword in output['text']:
-                            return 'keyword', output['text'], output['channel']
-    return None, None, None
+                            return 'keyword', output['text'], output['channel'], output['user']
+    return None, None, None, None
 
 if __name__ == "__main__":
     READ_WEBSOCKET_DELAY = 1  # 1 second delay between reading from firehose
     if slack_client.rtm_connect():
         print("Slackmate connected and running!")
+        api_call = slack_client.api_call("users.list")
+        if api_call.get('ok'):
+            # retrieve all users so we can find our bot
+            users = api_call.get('members')
+            for user in users:
+                if 'name' in user and user.get('name') == BOT_NAME:
+                    print("Bot ID for '{}' is {}".format(user['name'], user.get('id')))
+        else:
+            print("could not find bot user with the name {}".format(BOT_NAME))
         while True:
-            trigger, command, channel = parse_slack_output(slack_client.rtm_read())
+            trigger, command, channel, user = parse_slack_output(slack_client.rtm_read())
             if trigger and channel:
                 if trigger == 'keyword':
                     handle_keyword(command, channel)
