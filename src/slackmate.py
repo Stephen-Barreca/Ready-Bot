@@ -2,7 +2,7 @@ import os
 import time
 import random
 
-from responses import lunch_responses, lunch_keywords
+from keywords import keywords, gifs
 from slackclient import SlackClient
 
 # constants
@@ -12,7 +12,6 @@ AT_BOT = "<@{}>".format(BOT_ID)
 EXAMPLE_COMMAND = "do"
 BOT_NAME = 'slackmate'
 COMMANDS = ['do', 'what', 'calculate']
-KEYWORDS = lunch_keywords
 KEYWORD_TRIGGER_PERCENT = 100
 
 slack_client = SlackClient(TOKEN)
@@ -35,19 +34,39 @@ def handle_command(command, channel):
     slack_client.api_call("chat.postMessage", channel=channel,
                           text=response, as_user=True)
 
-def handle_keyword(message, channel):
+def handle_keyword(keyword, channel):
     """
         looks for keywords and chats back
+        Keywords and responses are stored in responses.py
+        make sure that you only responding to some (not all) off the keyword hits
+        otherwise slackmate becomes really annoying, really fast.
     """
+    ktp = KEYWORD_TRIGGER_PERCENT
+    response = None
+    trigger_roll = random.randint(0, 99)
+    if trigger_roll < ktp:
+        response = random.SystemRandom().choice(keywords[keyword])
+    else:
+        print('The almighty Rand Don has blocked this message')
+
+    if response:
+        slack_client.api_call("chat.postMessage", channel=channel, text=response, as_user=True)
+
+def handle_gif(message, channel):
+    """
+    posts gifs that express the idea of the previous messages
+    :param message:
+    :param channel:
+    :return:
+    """
+    ktp = KEYWORD_TRIGGER_PERCENT * 10
     message = message.lower()
     response = None
-    for lunch_key in lunch_keywords:
-        if lunch_key in message:
-            trigger_roll = random.randint(0, 99)
-            if trigger_roll < KEYWORD_TRIGGER_PERCENT:
-                response = random.SystemRandom().choice(lunch_responses)
-            else:
-                print('The almighty Rand Don has blocked this message')
+    trigger_roll = random.randint(0, 99)
+    if trigger_roll < ktp:
+        response = random.SystemRandom().choice(gifs[message])
+    else:
+        print('The almighty Rand Don has blocked this message')
 
     if response:
         slack_client.api_call("chat.postMessage", channel=channel, text=response, as_user=True)
@@ -65,11 +84,16 @@ def parse_slack_output(slack_rtm_output):
             if output and 'text' in output and 'bot_id' not in output:
                 if AT_BOT in output['text']:
                     # return text after the @ mention, whitespace removed
-                    return 'command', output['text'].split(AT_BOT)[1].strip().lower(), output['channel'], output['user']
+                    return 'command', output['text'].split(AT_BOT)[1].strip().lower(), \
+                           output['channel'], output['user']
+
+                elif output['text'] in gifs.keys():
+                    return 'gif', output['text'], output['channel'], output['user']
+
                 else:
-                    for keyword in KEYWORDS:
-                        if keyword in output['text']:
-                            return 'keyword', output['text'], output['channel'], output['user']
+                    for keyword in keywords.keys():
+                        if keyword in output['text'].lower():
+                            return 'keyword', keyword, output['channel'], output['user']
     return None, None, None, None
 
 if __name__ == "__main__":
@@ -92,6 +116,8 @@ if __name__ == "__main__":
                     handle_keyword(command, channel)
                 elif trigger == 'command':
                     handle_command(command, channel)
+                elif trigger == 'gif':
+                    handle_gif(command, channel)
             time.sleep(READ_WEBSOCKET_DELAY)
     else:
         print("Connection failed. Invalid Slack token or bot ID?")
